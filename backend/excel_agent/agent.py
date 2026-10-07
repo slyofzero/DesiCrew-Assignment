@@ -1,4 +1,5 @@
 import json
+import re
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
@@ -45,8 +46,16 @@ except ImportError:
 class ReasoningStep(BaseModel):
     """Structured output for the Reasoning Engine."""
     thought: str = Field(description="Step-by-step reasoning about what data subset, filter, or calculation is needed.")
+    is_aligned: bool = Field(
+        default=True,
+        description="True if query is relevant to Excel spreadsheets, data analysis, calculations, inventory, or tool capabilities. False if the query is general small talk, poetry, unrelated trivia, or out of scope."
+    )
+    output_as_table: bool = Field(
+        default=False,
+        description="True if the fetched or analyzed data consists of multiple items, rows, comparisons, or multi-field records that would be clearer presented as a markdown table. False if the answer is a single scalar number, yes/no, short statement, or greeting."
+    )
     decision: Literal["call_tool", "finish"] = Field(
-        description="'call_tool' if we need to execute a tool (e.g. python, metadata, search). 'finish' ONLY if all necessary observations are gathered."
+        description="'call_tool' if we need to execute a tool (e.g. python, metadata, search). 'finish' if answer is ready or query is out-of-scope."
     )
     tool_instruction: str | None = Field(
         default=None,
@@ -69,6 +78,7 @@ class AgentState(TypedDict):
     query: str
     current_thought: str
     current_decision: str
+    output_as_table: bool
     tool_instruction: str
     thoughts: list[str]
     trajectory: list[dict[str, Any]]
@@ -97,15 +107,24 @@ def build_agent_graph(model: str = "openai/gpt-4o-mini"):
         reflections = state.get("reflection_notes", [])
         steps_taken = state.get("steps_taken", 0)
 
-        # Format observations gathered so far (preserve full output for calculations/results)
+        # Format observations gathered in CURRENT turn (exclude previous chat turns)
         obs_history = []
-        for msg in state["messages"]:
-            if isinstance(msg, ToolMessage):
+        prior_turns: list[str] = []
+
+        all_msgs = state.get("messages", [])
+        # Find prior conversational turns (HumanMessage and AIMessage before current question)
+        for msg in all_msgs:
+            if isinstance(msg, HumanMessage) and msg.content != query:
+                prior_turns.append(f"User: {msg.content}")
+            elif isinstance(msg, AIMessage) and not msg.tool_calls and msg.content:
+                prior_turns.append(f"Assistant: {msg.content}")
+            elif isinstance(msg, ToolMessage):
                 obs_history.append(f"Observation from {msg.name}:\n{msg.content!s}")
             elif isinstance(msg, AIMessage) and msg.tool_calls:
                 tc_names = [f"{tc['name']}({tc['args']})" for tc in msg.tool_calls]
                 obs_history.append(f"Action taken: {', '.join(tc_names)}")
 
+        conversation_history = "\n".join(prior_turns) if prior_turns else "No prior conversation history."
         history_summary = "\n\n".join(obs_history) if obs_history else "No actions taken yet."
         reflections_summary = (
             "Previous Critic Reflections/Corrections:\n" + "\n".join(reflections)
@@ -125,6 +144,7 @@ def build_agent_graph(model: str = "openai/gpt-4o-mini"):
             prompt = REASONER_PROMPT_TEMPLATE.format(
                 file_path=file_path,
                 query=query,
+                conversation_history=conversation_history,
                 history_summary=history_summary,
                 reflections_summary=reflections_summary,
             )
@@ -136,11 +156,17 @@ def build_agent_graph(model: str = "openai/gpt-4o-mini"):
             else:
                 step = ReasoningStep(
                     thought=str(getattr(raw_step, "thought", "Proceeding with analysis.")),
+                    is_aligned=getattr(raw_step, "is_aligned", True),
                     decision=getattr(raw_step, "decision", "finish"),
                     tool_instruction=getattr(raw_step, "tool_instruction", None),
                 )
 
-        thought_repr = f"THOUGHT: {step.thought} | DECISION: {step.decision}"
+        # If the query is out of scope / not aligned, force finish immediately without calling tools
+        if not step.is_aligned:
+            step.decision = "finish"
+            step.tool_instruction = None
+
+        thought_repr = f"THOUGHT: {step.thought} | ALIGNED: {step.is_aligned} | TABLE: {step.output_as_table} | DECISION: {step.decision}"
         updated_thoughts = list(thoughts_history)
         updated_thoughts.append(thought_repr)
 
@@ -149,6 +175,8 @@ def build_agent_graph(model: str = "openai/gpt-4o-mini"):
         traj.append({
             "type": "reason",
             "thought": step.thought,
+            "is_aligned": step.is_aligned,
+            "output_as_table": step.output_as_table,
             "decision": step.decision,
             "tool_instruction": step.tool_instruction or "",
         })
@@ -156,6 +184,7 @@ def build_agent_graph(model: str = "openai/gpt-4o-mini"):
         return {
             "current_thought": step.thought,
             "current_decision": step.decision,
+            "output_as_table": step.output_as_table,
             "tool_instruction": step.tool_instruction or "",
             "thoughts": updated_thoughts,
             "trajectory": traj,
@@ -280,20 +309,34 @@ def build_agent_graph(model: str = "openai/gpt-4o-mini"):
                 observations.append(f"{prefix}{msg.name}: {msg.content}")
 
         obs_str = "\n".join(observations)
+        output_as_table = state.get("output_as_table", False)
+        table_instruction = (
+            "TABLE FORMATTING REQUIRED: The reasoning engine determined that the fetched data should be formatted as a Markdown table. You MUST present the items, records, or multi-field data using clean Markdown table syntax (| Col 1 | Col 2 | ... |) with a clear header row."
+            if output_as_table
+            else "Do NOT format as a table unless strictly requested; present as clear concise text or bullet points."
+        )
 
         prompt = SYNTHESIZE_PROMPT_TEMPLATE.format(
             query=query,
             reflection_critique=reflection_critique,
             obs_str=obs_str,
+            table_instruction=table_instruction,
         )
         response = llm_pure.invoke(prompt)
-        answer_text = response.content if isinstance(response.content, str) else str(response.content)
+        raw_text = response.content if isinstance(response.content, str) else str(response.content)
+        answer_text = re.sub(
+            r"^(?:\*{0,2}(?:Final\s+(?:Response|Answer)|Summary)\s*[:\-]?\*{0,2}\s*[:\-]?\s*)+",
+            "",
+            raw_text.strip(),
+            flags=re.IGNORECASE,
+        ).strip()
 
         # Append final_output to trajectory
         traj = list(state.get("trajectory", []))
         traj.append({
             "type": "final_output",
             "content": answer_text,
+            "output_as_table": output_as_table,
         })
 
         return {
@@ -306,18 +349,19 @@ def build_agent_graph(model: str = "openai/gpt-4o-mini"):
     # Conditional Routing Logic
     # -------------------------------------------------------------
     def route_after_reason(state: AgentState) -> str:
-        """Route based on structured decision: call_tool -> act, finish -> reflect.
-        Guarantees at least 1 action round before finishing.
+        """Route based on structured decision: call_tool -> act, finish -> synthesize/reflect.
+        Dependent purely on the Reason node's output.
         """
         decision = state.get("current_decision", "call_tool")
-        steps_taken = state.get("steps_taken", 0)
-
-        # Ensure at least 1 round of reason -> act -> tools happens before finishing
-        if steps_taken <= 1:
-            return "act"
 
         if decision == "finish":
-            return "reflect"
+            # If tools were already called, reflect and verify before finishing;
+            # if no tools were called (e.g. general query, greeting, conversational), jump straight to synthesize
+            has_tool_observations = any(isinstance(m, ToolMessage) for m in state.get("messages", []))
+            if has_tool_observations:
+                return "reflect"
+            return "synthesize"
+
         return "act"
 
     def route_after_act(state: AgentState) -> str:
@@ -342,7 +386,11 @@ def build_agent_graph(model: str = "openai/gpt-4o-mini"):
     workflow.add_node("synthesize", synthesize_node)
 
     workflow.add_edge(START, "reason")
-    workflow.add_conditional_edges("reason", route_after_reason, {"act": "act", "reflect": "reflect"})
+    workflow.add_conditional_edges(
+        "reason",
+        route_after_reason,
+        {"act": "act", "reflect": "reflect", "synthesize": "synthesize"},
+    )
     workflow.add_conditional_edges("act", route_after_act, {"tools": "tools", "reflect": "reflect"})
     workflow.add_edge("tools", "reason")  # Loop back: Reason -> Act -> Tools -> Reason -> ...
     workflow.add_conditional_edges("reflect", route_after_reflect, {"reason": "reason", "synthesize": "synthesize"})
@@ -420,6 +468,8 @@ class ExcelAgent:
                 formatted_trajectory.append({
                     "step": "reason",
                     "thought": step.get("thought", ""),
+                    "is_aligned": step.get("is_aligned", True),
+                    "output_as_table": step.get("output_as_table", False),
                     "decision": step.get("decision", ""),
                     "instruction": step.get("tool_instruction", ""),
                 })
@@ -443,6 +493,7 @@ class ExcelAgent:
                 formatted_trajectory.append({
                     "step": "final_output",
                     "content": step.get("content", ""),
+                    "output_as_table": step.get("output_as_table", False),
                 })
 
         return {
@@ -453,6 +504,52 @@ class ExcelAgent:
             "reflection_notes": final_state.get("reflection_notes", []),
             "retry_count": final_state.get("retry_count", 0),
         }
+
+    def stream(
+        self,
+        file_path: str,
+        query: str,
+        chat_history: list[BaseMessage] | None = None,
+    ):
+        """Stream the execution graph yielding step events in real-time."""
+        if file_path.endswith("?") or (not file_path.endswith((".xlsx", ".xls")) and query.endswith((".xlsx", ".xls"))):
+            file_path, query = query, file_path
+
+        p = Path(file_path)
+        if not p.is_absolute() or not p.exists():
+            candidates = [
+                p.resolve(),
+                (Path.cwd() / p).resolve(),
+                (Path(__file__).resolve().parent / p).resolve(),
+                (Path(__file__).resolve().parent.parent / p).resolve(),
+                (Path.cwd() / "data" / p.name).resolve(),
+                (Path(__file__).resolve().parent.parent / "data" / p.name).resolve(),
+            ]
+            for cand in candidates:
+                if cand.exists():
+                    file_path = str(cand)
+                    break
+
+        initial_messages: list[BaseMessage] = list(chat_history or [])
+        initial_messages.append(HumanMessage(content=query))
+
+        initial_state: AgentState = {
+            "messages": initial_messages,
+            "file_path": str(file_path),
+            "query": query,
+            "current_thought": "",
+            "current_decision": "call_tool",
+            "tool_instruction": "",
+            "thoughts": [],
+            "trajectory": [],
+            "reflection_notes": [],
+            "retry_count": 0,
+            "steps_taken": 0,
+            "is_satisfied": False,
+            "final_answer": "",
+        }
+
+        yield from self.graph.stream(initial_state)
 
     @staticmethod
     def print_trace(reply: dict[str, Any]) -> None:

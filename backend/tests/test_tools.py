@@ -30,3 +30,23 @@ print("\n=== 3. Search Definitions Success ===")
 print("Source:", s_res.get("source"))
 print("Title:", s_res.get("title"))
 print("Summary:", str(s_res.get("summary"))[:120] + "...")
+
+# 4. Test Statistics Tools
+from excel_agent.tools import (  # noqa: E402
+    calculate_mean,
+    calculate_median,
+    calculate_mode,
+    calculate_quantiles,
+)
+
+mean_res = calculate_mean.invoke({"file_path": fp, "column_name": "Opening Stock"})
+median_res = calculate_median.invoke({"file_path": fp, "column_name": "Opening Stock"})
+mode_res = calculate_mode.invoke({"file_path": fp, "column_name": "Opening Stock"})
+quantiles_res = calculate_quantiles.invoke({"file_path": fp, "column_name": "Opening Stock"})
+
+print("\n=== 4. Statistics Tools Verification ===")
+print("Mean:", mean_res)
+print("Median:", median_res)
+print("Mode:", mode_res)
+print("Quantiles:", quantiles_res)
+
