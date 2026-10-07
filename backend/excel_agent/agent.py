@@ -1,7 +1,6 @@
 import json
 from pathlib import Path
-from typing import Annotated, Any, Dict, List, Literal, Optional
-from typing_extensions import TypedDict
+from typing import Annotated, Any, Literal
 
 from langchain_core.messages import (
     AIMessage,
@@ -14,12 +13,29 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 from pydantic import BaseModel, Field
+from typing_extensions import TypedDict
 
 try:
     from excel_agent.llm import get_llm
+    from excel_agent.prompts import (
+        ACT_SYSTEM_PROMPT,
+        ACT_USER_PROMPT_TEMPLATE,
+        CRITIC_PROMPT_TEMPLATE,
+        CRITIC_REJECTION_MESSAGE_TEMPLATE,
+        REASONER_PROMPT_TEMPLATE,
+        SYNTHESIZE_PROMPT_TEMPLATE,
+    )
     from excel_agent.tools import ALL_TOOLS
 except ImportError:
     from llm import get_llm
+    from prompts import (
+        ACT_SYSTEM_PROMPT,
+        ACT_USER_PROMPT_TEMPLATE,
+        CRITIC_PROMPT_TEMPLATE,
+        CRITIC_REJECTION_MESSAGE_TEMPLATE,
+        REASONER_PROMPT_TEMPLATE,
+        SYNTHESIZE_PROMPT_TEMPLATE,
+    )
     from tools import ALL_TOOLS
 
 
@@ -32,7 +48,7 @@ class ReasoningStep(BaseModel):
     decision: Literal["call_tool", "finish"] = Field(
         description="'call_tool' if we need to execute a tool (e.g. python, metadata, search). 'finish' ONLY if all necessary observations are gathered."
     )
-    tool_instruction: Optional[str] = Field(
+    tool_instruction: str | None = Field(
         default=None,
         description="Clear instructions for the action executor if decision is 'call_tool'."
     )
@@ -48,15 +64,17 @@ class CriticVerdict(BaseModel):
 
 class AgentState(TypedDict):
     """LangGraph state schema with explicit Reason -> Act -> Reflect loop."""
-    messages: Annotated[List[BaseMessage], add_messages]
+    messages: Annotated[list[BaseMessage], add_messages]
     file_path: str
     query: str
     current_thought: str
     current_decision: str
     tool_instruction: str
-    thoughts: List[str]
-    reflection_notes: List[str]
+    thoughts: list[str]
+    trajectory: list[dict[str, Any]]
+    reflection_notes: list[str]
     retry_count: int
+    steps_taken: int
     is_satisfied: bool
     final_answer: str
 
@@ -71,88 +89,119 @@ def build_agent_graph(model: str = "openai/gpt-4o-mini"):
     # -------------------------------------------------------------
     # 1. REASON NODE: Pure cognitive reasoning (without tools)
     # -------------------------------------------------------------
-    def reason_node(state: AgentState) -> Dict[str, Any]:
+    def reason_node(state: AgentState) -> dict[str, Any]:
         """Analyze current state, formulate a thought, and decide the next step."""
         file_path = state.get("file_path", "")
         query = state.get("query", "")
         thoughts_history = state.get("thoughts", [])
         reflections = state.get("reflection_notes", [])
+        steps_taken = state.get("steps_taken", 0)
 
-        # Format observations gathered so far
+        # Format observations gathered so far (preserve full output for calculations/results)
         obs_history = []
         for msg in state["messages"]:
             if isinstance(msg, ToolMessage):
-                obs_history.append(f"Observation from {msg.name}:\n{str(msg.content)[:1500]}")
+                obs_history.append(f"Observation from {msg.name}:\n{msg.content!s}")
             elif isinstance(msg, AIMessage) and msg.tool_calls:
-                tc_names = [tc["name"] for tc in msg.tool_calls]
-                obs_history.append(f"Action taken: called {', '.join(tc_names)}")
+                tc_names = [f"{tc['name']}({tc['args']})" for tc in msg.tool_calls]
+                obs_history.append(f"Action taken: {', '.join(tc_names)}")
 
         history_summary = "\n\n".join(obs_history) if obs_history else "No actions taken yet."
         reflections_summary = (
-            f"Previous Critic Reflections/Corrections:\n" + "\n".join(reflections)
+            "Previous Critic Reflections/Corrections:\n" + "\n".join(reflections)
             if reflections
             else "None."
         )
 
-        prompt = f"""You are the Reasoning Engine of an Excel Data Intelligence Agent.
-Active Excel Dataset: {file_path}
-User Query: "{query}"
-
-Observations Gathered So Far:
-{history_summary}
-
-{reflections_summary}
-
-Your task:
-Analyze what information is currently available and what is missing to answer the user query accurately.
-CRITICAL CONSTRAINT RULES:
-- If the user asks about a specific product or category (e.g., 'gaming items', 'laptops', 'accessories'), you MUST filter `df['Product Name']`.
-- NEVER run an unfiltered table-wide calculation (like `df['col'].sum()`) if a specific category was requested.
-- If observations already contain the verified answer, set decision='finish'.
-- If we still need to inspect metadata or execute python code, set decision='call_tool'.
-"""
-        step: ReasoningStep = reasoner_llm.invoke(prompt)  # type: ignore
+        # Circuit breaker: If we have already taken 5 tool steps, force finish to reflect
+        step: ReasoningStep
+        if steps_taken >= 6:
+            step = ReasoningStep(
+                thought="Sufficient observations gathered over multiple steps. Proceeding to reflection.",
+                decision="finish",
+                tool_instruction=None,
+            )
+        else:
+            prompt = REASONER_PROMPT_TEMPLATE.format(
+                file_path=file_path,
+                query=query,
+                history_summary=history_summary,
+                reflections_summary=reflections_summary,
+            )
+            raw_step = reasoner_llm.invoke(prompt)
+            if isinstance(raw_step, ReasoningStep):
+                step = raw_step
+            elif isinstance(raw_step, dict):
+                step = ReasoningStep(**raw_step)
+            else:
+                step = ReasoningStep(
+                    thought=str(getattr(raw_step, "thought", "Proceeding with analysis.")),
+                    decision=getattr(raw_step, "decision", "finish"),
+                    tool_instruction=getattr(raw_step, "tool_instruction", None),
+                )
 
         thought_repr = f"THOUGHT: {step.thought} | DECISION: {step.decision}"
         updated_thoughts = list(thoughts_history)
         updated_thoughts.append(thought_repr)
+
+        # Append to trajectory
+        traj = list(state.get("trajectory", []))
+        traj.append({
+            "type": "reason",
+            "thought": step.thought,
+            "decision": step.decision,
+            "tool_instruction": step.tool_instruction or "",
+        })
 
         return {
             "current_thought": step.thought,
             "current_decision": step.decision,
             "tool_instruction": step.tool_instruction or "",
             "thoughts": updated_thoughts,
+            "trajectory": traj,
+            "steps_taken": steps_taken + 1,
         }
 
     # -------------------------------------------------------------
     # 2. ACT NODE: Emits the tool call grounded by the thought
     # -------------------------------------------------------------
-    def act_node(state: AgentState) -> Dict[str, Any]:
+    def act_node(state: AgentState) -> dict[str, Any]:
         """Convert the current thought & instruction into an actionable tool call."""
         file_path = state.get("file_path", "")
         thought = state.get("current_thought", "")
         instruction = state.get("tool_instruction", "")
 
         act_prompt = [
-            SystemMessage(
-                content=(
-                    f"You are the Action Executor for an Excel agent. Active file: {file_path}.\n"
-                    f"You have access to: execute_python, search_definitions, calculate, read_metadata, read_data, create_sheet, edit_sheet.\n"
-                    f"You MUST call a tool that executes the required instruction.\n"
-                    f"Always pass file_path='{file_path}' when invoking data tools."
+            SystemMessage(content=ACT_SYSTEM_PROMPT.format(file_path=file_path)),
+            HumanMessage(
+                content=ACT_USER_PROMPT_TEMPLATE.format(
+                    thought=thought,
+                    instruction=instruction,
                 )
             ),
-            HumanMessage(
-                content=(
-                    f"Reasoning thought:\n{thought}\n\n"
-                    f"Tool instruction:\n{instruction}\n\n"
-                    f"Execute the tool call:"
-                )
-            )
         ]
 
         response = llm_with_tools.invoke(act_prompt)
-        return {"messages": [response]}
+
+        # Append action and tool call intent to trajectory
+        traj = list(state.get("trajectory", []))
+        action_calls = []
+        if hasattr(response, "tool_calls") and response.tool_calls:
+            for tc in response.tool_calls:
+                action_calls.append({
+                    "tool": tc["name"],
+                    "args": tc.get("args", {}),
+                    "id": tc.get("id", ""),
+                })
+        traj.append({
+            "type": "act",
+            "action_calls": action_calls,
+        })
+
+        return {
+            "messages": [response],
+            "trajectory": traj,
+        }
 
     # -------------------------------------------------------------
     # 3. TOOL EXECUTION NODE
@@ -162,32 +211,35 @@ CRITICAL CONSTRAINT RULES:
     # -------------------------------------------------------------
     # 4. REFLECTION NODE: Critic & Self-Reflection Verifier
     # -------------------------------------------------------------
-    def reflect_node(state: AgentState) -> Dict[str, Any]:
+    def reflect_node(state: AgentState) -> dict[str, Any]:
         """Critique the findings against the original query to ensure no shortcuts or hallucinations."""
         query = state.get("query", "")
         retries = state.get("retry_count", 0)
 
+        # Pair each tool action with its output so the critic can verify filtering code
         observations = []
+        last_action = ""
         for msg in state["messages"]:
-            if isinstance(msg, ToolMessage):
-                observations.append(f"Tool {msg.name} -> {msg.content}")
+            if isinstance(msg, AIMessage) and msg.tool_calls:
+                tc_strs = [f"{tc['name']}({tc.get('args', {})})" for tc in msg.tool_calls]
+                last_action = "Action: " + ", ".join(tc_strs)
+            elif isinstance(msg, ToolMessage):
+                prefix = f"[{last_action}] " if last_action else ""
+                observations.append(f"{prefix}Observation from {msg.name} -> {msg.content}")
 
         obs_str = "\n".join(observations) if observations else "No observations gathered."
 
-        critic_prompt = f"""You are the Self-Reflection Verifier Critic for an Excel Data Agent.
-Original User Query: "{query}"
-
-Observations Gathered:
-{obs_str}
-
-Evaluate if the gathered observations strictly answer the user's specific request:
-1. Did the tools filter for the requested entity or category (e.g., 'gaming items'), or did they accidentally aggregate the entire dataset?
-2. Are the figures grounded and verified in the tool outputs?
-3. Did the agent gather enough data to answer?
-
-Set verdict='approved' ONLY if observations properly answer the query. Set verdict='rejected' if data is missing, unfiltered, or incorrect.
-"""
-        critic: CriticVerdict = critic_llm.invoke(critic_prompt)  # type: ignore
+        critic_prompt = CRITIC_PROMPT_TEMPLATE.format(query=query, obs_str=obs_str)
+        raw_critic = critic_llm.invoke(critic_prompt)
+        if isinstance(raw_critic, CriticVerdict):
+            critic = raw_critic
+        elif isinstance(raw_critic, dict):
+            critic = CriticVerdict(**raw_critic)
+        else:
+            critic = CriticVerdict(
+                verdict=getattr(raw_critic, "verdict", "approved"),
+                critique=getattr(raw_critic, "critique", "Observations verified."),
+            )
 
         is_approved = critic.verdict == "approved"
         curr_reflections = list(state.get("reflection_notes", []))
@@ -195,11 +247,7 @@ Set verdict='approved' ONLY if observations properly answer the query. Set verdi
         curr_reflections.append(critique_summary)
 
         if not is_approved and retries < 3:
-            correction_msg = (
-                f"[Self-Reflection Rejection]: The critic identified an issue with the findings:\n"
-                f"{critic.critique}\n"
-                f"Please reason about this critique and execute the corrected query."
-            )
+            correction_msg = CRITIC_REJECTION_MESSAGE_TEMPLATE.format(critique=critic.critique)
             return {
                 "messages": [HumanMessage(content=correction_msg)],
                 "reflection_notes": curr_reflections,
@@ -213,32 +261,44 @@ Set verdict='approved' ONLY if observations properly answer the query. Set verdi
             }
 
     # -------------------------------------------------------------
-    # 5. SYNTHESIZE NODE: Generates final verified answer
+    # 5. SYNTHESIZE NODE: Output Summarizer of verified response
     # -------------------------------------------------------------
-    def synthesize_node(state: AgentState) -> Dict[str, Any]:
-        """Generate final plain-English answer grounded in verified observations."""
+    def synthesize_node(state: AgentState) -> dict[str, Any]:
+        """Summarize everything deemed as the correct response by reflection."""
         query = state.get("query", "")
+        reflections = state.get("reflection_notes", [])
+        reflection_critique = "\n".join(reflections) if reflections else "All findings verified and approved."
+
         observations = []
+        last_action = ""
         for msg in state["messages"]:
-            if isinstance(msg, ToolMessage):
-                observations.append(f"{msg.name}: {msg.content}")
+            if isinstance(msg, AIMessage) and msg.tool_calls:
+                tc_strs = [f"{tc['name']}({tc.get('args', {})})" for tc in msg.tool_calls]
+                last_action = "Action: " + ", ".join(tc_strs)
+            elif isinstance(msg, ToolMessage):
+                prefix = f"[{last_action}] " if last_action else ""
+                observations.append(f"{prefix}{msg.name}: {msg.content}")
 
         obs_str = "\n".join(observations)
 
-        prompt = f"""You are an Excel Data Intelligence Assistant.
-User Query: "{query}"
-
-Verified Tool Observations:
-{obs_str}
-
-Provide a clear, helpful, and concise response in plain English.
-If specific products or items were counted or calculated, explicitly list them so the user has full clarity.
-"""
+        prompt = SYNTHESIZE_PROMPT_TEMPLATE.format(
+            query=query,
+            reflection_critique=reflection_critique,
+            obs_str=obs_str,
+        )
         response = llm_pure.invoke(prompt)
         answer_text = response.content if isinstance(response.content, str) else str(response.content)
 
+        # Append final_output to trajectory
+        traj = list(state.get("trajectory", []))
+        traj.append({
+            "type": "final_output",
+            "content": answer_text,
+        })
+
         return {
             "final_answer": answer_text,
+            "trajectory": traj,
             "messages": [AIMessage(content=answer_text)],
         }
 
@@ -246,8 +306,16 @@ If specific products or items were counted or calculated, explicitly list them s
     # Conditional Routing Logic
     # -------------------------------------------------------------
     def route_after_reason(state: AgentState) -> str:
-        """Route based on structured decision: call_tool -> act, finish -> reflect."""
+        """Route based on structured decision: call_tool -> act, finish -> reflect.
+        Guarantees at least 1 action round before finishing.
+        """
         decision = state.get("current_decision", "call_tool")
+        steps_taken = state.get("steps_taken", 0)
+
+        # Ensure at least 1 round of reason -> act -> tools happens before finishing
+        if steps_taken <= 1:
+            return "act"
+
         if decision == "finish":
             return "reflect"
         return "act"
@@ -290,7 +358,7 @@ class ExcelAgent:
         self.model = model
         self.graph = build_agent_graph(model=model)
 
-    def run(self, file_path: str, query: str, chat_history: Optional[List[BaseMessage]] = None) -> Dict[str, Any]:
+    def run(self, file_path: str, query: str, chat_history: list[BaseMessage] | None = None) -> dict[str, Any]:
         """Run a query through the LangGraph agent."""
         # Detect and swap if query and file_path were passed in reverse order
         if file_path.endswith("?") or (not file_path.endswith((".xlsx", ".xls")) and query.endswith((".xlsx", ".xls"))):
@@ -312,7 +380,7 @@ class ExcelAgent:
                     file_path = str(cand)
                     break
 
-        initial_messages: List[BaseMessage] = list(chat_history or [])
+        initial_messages: list[BaseMessage] = list(chat_history or [])
         initial_messages.append(HumanMessage(content=query))
 
         initial_state: AgentState = {
@@ -323,8 +391,10 @@ class ExcelAgent:
             "current_decision": "call_tool",
             "tool_instruction": "",
             "thoughts": [],
+            "trajectory": [],
             "reflection_notes": [],
             "retry_count": 0,
+            "steps_taken": 0,
             "is_satisfied": False,
             "final_answer": "",
         }
@@ -332,8 +402,52 @@ class ExcelAgent:
         final_state = self.graph.invoke(initial_state)
         answer = final_state.get("final_answer") or final_state["messages"][-1].content
 
+        # Reconstruct structured agent trajectory: reason -> act -> tool_trace -> reason -> ... -> final_output
+        messages = final_state.get("messages", [])
+        tool_outputs_map: dict[str, dict[str, Any]] = {}
+        for m in messages:
+            if isinstance(m, ToolMessage):
+                tool_outputs_map[str(m.tool_call_id)] = {
+                    "tool": m.name,
+                    "output": m.content,
+                }
+
+        formatted_trajectory: list[dict[str, Any]] = []
+        raw_traj = final_state.get("trajectory", [])
+        for step in raw_traj:
+            stype = step.get("type")
+            if stype == "reason":
+                formatted_trajectory.append({
+                    "step": "reason",
+                    "thought": step.get("thought", ""),
+                    "decision": step.get("decision", ""),
+                    "instruction": step.get("tool_instruction", ""),
+                })
+            elif stype == "act":
+                action_calls = step.get("action_calls", [])
+                formatted_trajectory.append({
+                    "step": "act",
+                    "calls": action_calls,
+                })
+                # Immediately follow with the tool_trace for those actions
+                for ac in action_calls:
+                    cid = str(ac.get("id", ""))
+                    t_out = tool_outputs_map.get(cid)
+                    formatted_trajectory.append({
+                        "step": "tool_trace",
+                        "tool": ac.get("tool"),
+                        "args": ac.get("args"),
+                        "output": t_out["output"] if t_out else None,
+                    })
+            elif stype == "final_output":
+                formatted_trajectory.append({
+                    "step": "final_output",
+                    "content": step.get("content", ""),
+                })
+
         return {
             "answer": answer,
+            "trajectory": formatted_trajectory,
             "thoughts": final_state.get("thoughts", []),
             "messages": final_state["messages"],
             "reflection_notes": final_state.get("reflection_notes", []),
@@ -341,38 +455,34 @@ class ExcelAgent:
         }
 
     @staticmethod
-    def print_trace(reply: Dict[str, Any]) -> None:
-        """Print the complete trace of Reasoning, Actions, and Reflections."""
-        print("\n" + "=" * 25 + " REASON -> ACT -> REFLECT TRACE " + "=" * 25)
+    def print_trace(reply: dict[str, Any]) -> None:
+        """Print the complete trace of Reasoning, Actions, and Reflections in chronological order."""
+        print("\n" + "=" * 25 + " AGENT TRAJECTORY " + "=" * 25)
 
-        # Print reasoning thoughts
-        thoughts = reply.get("thoughts", [])
-        if thoughts:
-            print("\n[REASONING THOUGHTS]:")
-            for i, th in enumerate(thoughts, 1):
-                clean_th = th.strip().replace("\n", " ")
-                print(f"  Step {i}: {clean_th}")
+        traj = reply.get("trajectory", [])
+        if traj:
+            for item in traj:
+                step_type = item.get("step")
+                if step_type == "reason":
+                    print(f"\n[REASON]: {item.get('thought')}")
+                    print(f"  Decision: {item.get('decision')} | Instruction: {item.get('instruction')}")
+                elif step_type == "act":
+                    calls = item.get("calls", [])
+                    c_desc = [f"{c['tool']}({c.get('args', {})})" for c in calls]
+                    print(f"\n[ACT]: {', '.join(c_desc)}")
+                elif step_type == "tool_trace":
+                    print(f"\n[TOOL_TRACE]: {item.get('tool')}")
+                    print(f"  Args: {json.dumps(item.get('args'), indent=2)}")
+                    print(f"  Output: {str(item.get('output'))[:300]}")
+                elif step_type == "final_output":
+                    print(f"\n[FINAL_OUTPUT]:\n{item.get('content')}")
+        else:
+            print("No trajectory recorded.")
 
-        # Print tool calls & results
-        messages = reply.get("messages", [])
-        has_tools = False
-        for msg in messages:
-            if isinstance(msg, AIMessage) and msg.tool_calls:
-                has_tools = True
-                for tc in msg.tool_calls:
-                    print(f"\n[ACTION: Tool Call] -> {tc['name']}")
-                    print(f"  Args: {json.dumps(tc['args'], indent=2)}")
-            elif isinstance(msg, ToolMessage):
-                print(f"\n[OBSERVATION: Tool Output] <- {msg.name}")
-                print(f"  Output: {str(msg.content)[:250]}")
-
-        # Print reflections
         reflections = reply.get("reflection_notes", [])
         if reflections:
             print("\n[CRITIC REFLECTIONS]:")
             for r in reflections:
                 print(f"  {r.strip()}")
 
-        if not has_tools and not thoughts:
-            print("No tool calls were made.")
-        print("\n" + "=" * 74 + "\n")
+        print("\n" + "=" * 70 + "\n")

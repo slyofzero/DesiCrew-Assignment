@@ -1,8 +1,9 @@
-from backend.excel_agent.tools.excel_tools import execute_python, search_definitions
 from pathlib import Path
 
-# Path to the Question 1 dataset
-fp = str(Path(__file__).resolve().parent.parent.parent / "Question 1" / "Inventory-Records-Sample-Data.xlsx")
+from excel_agent.tools import execute_python, search_definitions
+
+# Path to the dataset
+fp = str(Path(__file__).resolve().parent.parent / "data" / "data.xlsx")
 
 # 1. Test execute_python on real data
 code_test = (

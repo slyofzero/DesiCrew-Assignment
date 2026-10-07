@@ -1,12 +1,9 @@
 from pathlib import Path
+
 from excel_agent.agent import ExcelAgent
 
-# Resolve path to Question 1 inventory dataset
-dataset_path = str(
-    Path(__file__).resolve().parent.parent.parent
-    / "Question 1"
-    / "Inventory-Records-Sample-Data.xlsx"
-)
+# Resolve path to inventory dataset
+dataset_path = str(Path(__file__).resolve().parent.parent / "data" / "data.xlsx")
 
 print(f"Initializing ExcelAgent with dataset: {dataset_path}")
 agent = ExcelAgent()

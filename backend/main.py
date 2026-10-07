@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
 from excel_agent.server import router as excel_agent_router
 
 # Initialize central FastAPI application

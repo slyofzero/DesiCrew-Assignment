@@ -1,6 +1,6 @@
-from pathlib import Path
 import shutil
-from typing import Any, Dict, List, Optional
+from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 from langchain_core.messages import AIMessage, ToolMessage
@@ -27,19 +27,20 @@ agent = ExcelAgent()
 # Request / Response Models
 class ChatRequest(BaseModel):
     query: str = Field(..., description="User query about the Excel dataset")
-    file_path: Optional[str] = Field(default=None, description="Optional custom file path to Excel workbook")
+    file_path: str | None = Field(default=None, description="Optional custom file path to Excel workbook")
 
 
 class ChatResponse(BaseModel):
     answer: str
-    thoughts: List[str] = Field(default_factory=list)
-    tool_trace: List[Dict[str, Any]]
-    reflection_notes: List[str]
+    thoughts: list[str] = Field(default_factory=list)
+    trajectory: list[dict[str, Any]] = Field(default_factory=list)
+    tool_trace: list[dict[str, Any]]
+    reflection_notes: list[str]
     retry_count: int
 
 
 @router.get("/metadata")
-def get_metadata(file_path: Optional[str] = Query(default=None)):
+def get_metadata(file_path: str | None = Query(default=None)):
     print(file_path)
     """Fetch sheet names, columns, shapes, and sample rows for the dataset."""
     target_path = file_path or str(DEFAULT_DATASET)
@@ -51,9 +52,9 @@ def get_metadata(file_path: Optional[str] = Query(default=None)):
 
 @router.get("/data")
 def get_sheet_data(
-    sheet_name: Optional[str] = Query(default=None),
+    sheet_name: str | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=500),
-    file_path: Optional[str] = Query(default=None),
+    file_path: str | None = Query(default=None),
 ):
     """Fetch raw tabular rows from a specific sheet for data-grid rendering."""
     target_path = file_path or str(DEFAULT_DATASET)
@@ -85,7 +86,7 @@ async def upload_dataset(file: UploadFile = File(...)):
             "saved_path": str(destination),
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"File upload failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"File upload failed: {e!s}")
 
 
 @router.post("/chat", response_model=ChatResponse)
@@ -99,11 +100,11 @@ def chat_with_excel_agent(request: ChatRequest):
         reply = agent.run(target_path, request.query)
 
         # Extract structured tool trace from trajectory messages
-        trace: List[Dict[str, Any]] = []
+        trace: list[dict[str, Any]] = []
         messages = reply.get("messages", [])
 
         # Match tool calls with their corresponding ToolMessage outputs
-        tool_call_map: Dict[str, Dict[str, Any]] = {}
+        tool_call_map: dict[str, dict[str, Any]] = {}
 
         for msg in messages:
             if isinstance(msg, AIMessage) and msg.tool_calls:
@@ -130,10 +131,11 @@ def chat_with_excel_agent(request: ChatRequest):
         return ChatResponse(
             answer=reply.get("answer", ""),
             thoughts=reply.get("thoughts", []),
+            trajectory=reply.get("trajectory", []),
             tool_trace=trace,
             reflection_notes=reply.get("reflection_notes", []),
             retry_count=reply.get("retry_count", 0),
         )
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Agent execution failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Agent execution failed: {e!s}")

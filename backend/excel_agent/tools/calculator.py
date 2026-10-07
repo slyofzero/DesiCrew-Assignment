@@ -1,7 +1,8 @@
 import ast
 import math
 import operator
-from typing import Any, Dict, Union
+from typing import Any
+
 from langchain_core.tools import tool
 
 # Supported operators for safe AST evaluation
@@ -28,7 +29,7 @@ SAFE_FUNCTIONS = {
 }
 
 
-def safe_eval(node: ast.AST) -> Union[int, float]:
+def safe_eval(node: ast.AST) -> int | float:
     """Recursively evaluate an AST node containing mathematical expressions safely."""
     if isinstance(node, ast.Expression):
         return safe_eval(node.body)
@@ -59,7 +60,7 @@ def safe_eval(node: ast.AST) -> Union[int, float]:
 
 
 @tool
-def calculate(expression: str) -> Dict[str, Any]:
+def calculate(expression: str) -> dict[str, Any]:
     """Perform mathematical calculations safely (supports +, -, *, /, **, %, round, abs, sqrt).
 
     Args:
@@ -83,7 +84,7 @@ def calculate(expression: str) -> Dict[str, Any]:
     except Exception as e:
         return {
             "expression": clean_expr,
-            "error": f"Invalid mathematical expression: {str(e)}",
+            "error": f"Invalid mathematical expression: {e!s}",
             "status": "error",
         }
 
@@ -107,7 +108,7 @@ def multiply(a: float, b: float) -> float:
 
 
 @tool
-def divide(a: float, b: float) -> Dict[str, Any]:
+def divide(a: float, b: float) -> dict[str, Any]:
     """Divide a by b (a / b)."""
     if b == 0:
         return {"error": "Division by zero", "status": "error"}

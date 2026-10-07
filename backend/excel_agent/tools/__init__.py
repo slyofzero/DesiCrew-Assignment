@@ -1,3 +1,11 @@
+"""Tools package for the Excel Data Intelligence Agent.
+
+Organized into:
+  - excel_read.py: Schema inspection & cell/range getters (read_metadata, get_cells_by_indices, get_cell_range, filter_rows_by_string).
+  - excel_edit.py: Modification & execution tools (create_sheet, edit_sheet, execute_python, search_definitions).
+  - calculator.py: Mathematical calculation tools.
+"""
+
 from .calculator import (
     add,
     calculate,
@@ -5,21 +13,39 @@ from .calculator import (
     multiply,
     subtract,
 )
-from .excel_tools import (
-    clean_column_name,
+from .excel_edit import (
     create_sheet,
     edit_sheet,
     execute_python,
+    search_definitions,
+)
+from .excel_read import (
+    clean_column_name,
+    filter_rows_by_string,
+    get_cell_range,
+    get_cells_by_indices,
+    get_unique_values,
     load_clean_sheet,
-    read_data,
     read_metadata,
     resolve_file_path,
-    search_definitions,
+)
+from .statistics import (
+    calculate_mean,
+    calculate_median,
+    calculate_mode,
+    calculate_quantiles,
 )
 
 ALL_TOOLS = [
     read_metadata,
-    read_data,
+    get_unique_values,
+    get_cells_by_indices,
+    get_cell_range,
+    filter_rows_by_string,
+    calculate_mean,
+    calculate_median,
+    calculate_mode,
+    calculate_quantiles,
     execute_python,
     search_definitions,
     create_sheet,
@@ -32,19 +58,27 @@ ALL_TOOLS = [
 ]
 
 __all__ = [
+    "ALL_TOOLS",
+    "add",
+    "calculate",
+    "calculate_mean",
+    "calculate_median",
+    "calculate_mode",
+    "calculate_quantiles",
     "clean_column_name",
-    "resolve_file_path",
-    "load_clean_sheet",
-    "read_metadata",
-    "read_data",
     "create_sheet",
+    "divide",
     "edit_sheet",
     "execute_python",
-    "search_definitions",
-    "calculate",
-    "add",
-    "subtract",
+    "filter_rows_by_string",
+    "get_cell_range",
+    "get_cells_by_indices",
+    "get_unique_values",
+    "load_clean_sheet",
     "multiply",
-    "divide",
-    "ALL_TOOLS",
+    "read_metadata",
+    "resolve_file_path",
+    "search_definitions",
+    "subtract",
 ]
+

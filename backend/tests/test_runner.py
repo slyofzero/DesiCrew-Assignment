@@ -1,4 +1,5 @@
 from pathlib import Path
+
 from excel_agent.agent import ExcelAgent
 
 # Resolve path to dataset
