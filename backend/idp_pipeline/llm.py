@@ -12,7 +12,7 @@ AI_BASE_URL = os.getenv("AI_BASE_URL", "https://aipipe.org/openrouter/v1")
 def get_idp_llm(
     model: str = "amazon/nova-lite-v1",
     temperature: float = 0.0,
-    max_tokens: int = 350,
+    max_tokens: int = 800,
 ) -> ChatOpenAI:
     """
     Instantiate a LangChain ChatOpenAI instance routed through AIPipe

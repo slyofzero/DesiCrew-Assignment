@@ -82,6 +82,21 @@ KEYWORD_ANCHORS = {
         "suitability",
         "inputs provided by me in the suitability",
     ],
+    DocumentType.ASSIGNMENT_FORM: [
+        "assignment request form",
+        "assignment request",
+        "details of assignor",
+        "details of assignee",
+        "name of the policyholder (assignor)",
+    ],
+    DocumentType.PROPOSAL_FORM: [
+        "customer declaration - application/proposal form",
+        "application/proposal form",
+        "name of insurance plan",
+        "type of plan",
+        "premium payable",
+        "sum assured",
+    ],
 }
 
 # Mapping string names to DocumentType enum
@@ -105,6 +120,12 @@ TYPE_STR_MAP = {
     "multiple policies": DocumentType.MULTIPLE_POLICIES,
     "suitability profiler": DocumentType.SUITABILITY_PROFILER,
     "suitability": DocumentType.SUITABILITY_PROFILER,
+    "assignment request form": DocumentType.ASSIGNMENT_FORM,
+    "assignment form": DocumentType.ASSIGNMENT_FORM,
+    "assignment request": DocumentType.ASSIGNMENT_FORM,
+    "application / proposal form": DocumentType.PROPOSAL_FORM,
+    "application / proposal": DocumentType.PROPOSAL_FORM,
+    "proposal form": DocumentType.PROPOSAL_FORM,
     "not classified": DocumentType.UNKNOWN,
     "unknown document": DocumentType.UNKNOWN,
     "unknown": DocumentType.UNKNOWN,

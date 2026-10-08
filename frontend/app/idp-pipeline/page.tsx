@@ -69,6 +69,8 @@ const DOCUMENT_TYPES = [
   "Moral Hazard Questionnaire",
   "Multiple Policies Consent Form",
   "Suitability Profiler Declaration",
+  "Assignment Request Form",
+  "Application / Proposal Form",
 ];
 
 const API_BASE = "http://localhost:8000/api/idp";

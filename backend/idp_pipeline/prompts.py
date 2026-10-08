@@ -1,7 +1,7 @@
 """Central prompt templates for the Intelligent Document Processing (IDP) Pipeline."""
 
 IDP_CLASSIFICATION_PROMPT = """You are an expert Indian KYC and insurance document classifier.
-Given the raw OCR lines extracted from a document, classify it into EXACTLY ONE of the following 10 document types:
+Given the raw OCR lines extracted from a document, classify it into EXACTLY ONE of the following 12 document types:
 - Aadhaar Card
 - PAN Card
 - Driving Licence
@@ -12,19 +12,25 @@ Given the raw OCR lines extracted from a document, classify it into EXACTLY ONE 
 - Moral Hazard Report
 - Multiple Policies Declaration
 - Suitability Profiler
+- Assignment Request Form
+- Application / Proposal Form
 - Unknown
 
 Document Classification Guidelines:
-- "Aadhaar Card": Contains UIDAI, Government of India, Aadhaar number (12 digits), Mera Aadhaar Meri Pehchan, enrollment numbers.
-- "PAN Card": Contains Income Tax Department, Permanent Account Number, Father's Name, PAN format (5 letters + 4 digits + 1 letter).
-- "Driving Licence": Contains Union of India, Driving Licence, DL No, Transport Department, Motor Vehicles Act.
+- "Aadhaar Card": Contains UIDAI, Government of India, Aadhaar number (12 digits), Mera Aadhaar Meri Pehchan.
+- "PAN Card": Contains Income Tax Department, Permanent Account Number, Father's Name, PAN format.
+- "Driving Licence": Contains Union of India, Driving Licence, Form 7, Rule 16, Transport Department.
 - "Passport": Contains Republic of India, Passport, Passport No, Nationality, Place of Birth.
-- "NACH / ECS Mandate": Contains NACH, ECS, Mandate, UMRN, Sponsor Bank, IFSC, Account Number, recurring debit.
-- "FATCA Declaration": Contains FATCA, CRS, Tax Residency, TIN, Country of Birth, foreign tax declaration.
-- "Benefit Illustration": Contains Benefit Illustration, Premium, Sum Assured, Policy Term, Maturity Benefit.
-- "Moral Hazard Report": Contains Moral Hazard, MHR, Financial Underwriting, Agent's Confidential Report, sum at risk.
-- "Multiple Policies Declaration": Contains Multiple Policies, Existing Policies, Previous Insurance, Sum Assured in other policies.
-- "Suitability Profiler": Contains Suitability, Risk Appetite, Investment Horizon, Risk Profiler, Customer Category.
+- "NACH / ECS Mandate": Contains NACH Mandate Instruction, ECS, UMRN, Sponsor Bank, IFSC, Bank a/c number.
+- "FATCA Declaration": Contains Annexure Form, Section 285BA, FATCA, Tax Residency, TIN.
+- "Benefit Illustration": Heading is specifically 'Customer Declaration - Benefit Illustration' or contains 'Benefit Illustration'.
+- "Moral Hazard Report": Heading is specifically 'Moral Hazard Questionnaire', reasons for choosing nominee.
+- "Multiple Policies Declaration": Heading is specifically 'Split & Multiple Policies - Customer Consent form'.
+- "Suitability Profiler": Heading is specifically 'Customer Declaration - Suitability Profiler'.
+- "Assignment Request Form": Heading is specifically 'Assignment Request Form', Details of Assignor, Details of Assignee.
+- "Application / Proposal Form": Heading is specifically 'Customer Declaration - Application/Proposal Form', and has 'Type of Plan', 'Name of Insurance Plan', 'Sum Assured'.
+
+DISAMBIGUATION RULE: Many different insurance forms include a field label called "Application/Proposal Form Number". Do NOT classify as "Application / Proposal Form" just because that field label appears! Always classify by the PRIMARY HEADER TITLE of the document (e.g. Benefit Illustration, Suitability Profiler, FATCA Annexure Form, Moral Hazard).
 
 Respond ONLY with valid JSON wrapped in ```json ... ```:
 {{

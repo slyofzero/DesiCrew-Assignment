@@ -14,6 +14,8 @@ class DocumentType(str, Enum):
     MORAL_HAZARD = "Moral Hazard Questionnaire"
     MULTIPLE_POLICIES = "Multiple Policies Consent Form"
     SUITABILITY_PROFILER = "Suitability Profiler Declaration"
+    ASSIGNMENT_FORM = "Assignment Request Form"
+    PROPOSAL_FORM = "Application / Proposal Form"
     UNKNOWN = "Not Classified"
 
 
@@ -83,6 +85,20 @@ DOCUMENT_TARGET_FIELDS: Dict[DocumentType, List[str]] = {
         "Name of Agent/SP",
         "Date",
         "Place",
+    ],
+    DocumentType.ASSIGNMENT_FORM: [
+        "Proposal / Policy Number",
+        "Policyholder (Assignor) Name",
+        "Plan Name",
+        "Assignee Name",
+        "Reason for Assignment",
+    ],
+    DocumentType.PROPOSAL_FORM: [
+        "Application / Proposal Form Number",
+        "Name of Life Assured",
+        "Name of Insurance Plan",
+        "Sum Assured (INR)",
+        "Premium Payable (INR)",
     ],
 }
 
