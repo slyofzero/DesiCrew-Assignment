@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from excel_agent.server import router as excel_agent_router
+from idp_pipeline.router import router as idp_router
 
 # Initialize central FastAPI application
 app = FastAPI(
@@ -21,6 +22,7 @@ app.add_middleware(
 
 # Mount modular routers
 app.include_router(excel_agent_router, prefix="/api")
+app.include_router(idp_router, prefix="/api")
 
 @app.get("/")
 def root():
