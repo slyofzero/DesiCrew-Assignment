@@ -4,6 +4,8 @@ import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
 import {
   FileSpreadsheet,
   Upload,
@@ -842,7 +844,8 @@ export default function ExcelAgentPage() {
                         {msg.content && (
                           <div className="rounded-2xl px-5 py-4 bg-zinc-900 border border-zinc-800 text-zinc-200 text-sm leading-relaxed prose prose-invert prose-emerald max-w-none shadow-sm overflow-x-auto">
                             <ReactMarkdown
-                              remarkPlugins={[remarkGfm]}
+                              remarkPlugins={[remarkGfm, remarkMath]}
+                              rehypePlugins={[rehypeKatex]}
                               components={{
                                 table: ({ node, ...props }) => (
                                   <div className="my-3 overflow-x-auto rounded-xl border border-zinc-700/80 bg-zinc-950/60 shadow-md">

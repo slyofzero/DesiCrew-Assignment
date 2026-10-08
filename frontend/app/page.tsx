@@ -14,12 +14,12 @@ export default function Home() {
       buttonColor: "bg-emerald-600 hover:bg-emerald-500 text-white",
     },
     {
-      title: "Document-Aware Support Assistant",
+      title: "Notes Summarization & Intelligence Assistant",
       href: "/support-assistant",
       badge: "Question 2",
       icon: Bot,
       description:
-        "Context-grounded support agent featuring multi-turn working memory, anti-repetition guardrails, and precise knowledge retrieval.",
+        "Multi-turn note comprehension and synthesis assistant featuring vector retrieval, anti-repetition guardrails, and precise section citations.",
       color: "from-blue-500/20 to-indigo-500/10 border-blue-500/30 text-blue-400",
       buttonColor: "bg-blue-600 hover:bg-blue-500 text-white",
     },

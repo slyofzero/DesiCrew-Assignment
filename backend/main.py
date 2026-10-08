@@ -3,11 +3,12 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from excel_agent.server import router as excel_agent_router
 from idp_pipeline.router import router as idp_router
+from support_assistant.server import router as support_assistant_router
 
 # Initialize central FastAPI application
 app = FastAPI(
     title="DesiCrew AI Intelligence Backend",
-    description="Unified backend API powering the Excel Intelligence Agent, Support Assistant, and IDP Pipeline.",
+    description="Unified backend API powering the Excel Intelligence Agent, Notes Intelligence & Summarizer, and IDP Pipeline.",
     version="0.1.0",
 )
 
@@ -23,6 +24,7 @@ app.add_middleware(
 # Mount modular routers
 app.include_router(excel_agent_router, prefix="/api")
 app.include_router(idp_router, prefix="/api")
+app.include_router(support_assistant_router, prefix="/api")
 
 @app.get("/")
 def root():
