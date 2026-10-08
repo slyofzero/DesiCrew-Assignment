@@ -5,7 +5,7 @@ from typing import Dict, List, Optional
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
-from idp_pipeline.extractor import extract_fields_for_type, extract_text_from_file, process_document
+from idp_pipeline.extractor import extract_text_from_file, process_document
 from idp_pipeline.schemas import (
     DOCUMENT_TARGET_FIELDS,
     DocumentProcessResponse,
@@ -123,28 +123,7 @@ def reclassify_document(payload: ReclassifyRequest):
     if not cached or not file_path:
         raise HTTPException(status_code=404, detail="Document not found in current session cache")
 
-    ocr_lines, confs, _ = extract_text_from_file(file_path)
-    fields = extract_fields_for_type(payload.chosen_type, ocr_lines, confs)
-    flagged_count = sum(1 for f in fields if f.is_flagged)
-    overall_conf = (
-        round(sum(f.confidence for f in fields) / len(fields), 2)
-        if fields
-        else 0.90
-    )
-
-    updated = DocumentProcessResponse(
-        document_id=cached.document_id,
-        filename=cached.filename,
-        preview_url=cached.preview_url,
-        document_type=payload.chosen_type,
-        classification_confidence=1.0,  # User explicitly selected this type
-        fields=fields,
-        overall_confidence=overall_conf,
-        needs_review=flagged_count > 0,
-        flagged_count=flagged_count,
-        processing_time_sec=0.05,
-        raw_ocr_lines=cached.raw_ocr_lines,
-    )
+    updated = process_document(file_path, cached.filename, override_type=payload.chosen_type)
     _processed_docs_cache[payload.document_id] = updated
     return updated
 

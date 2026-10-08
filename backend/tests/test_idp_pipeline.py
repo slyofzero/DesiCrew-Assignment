@@ -86,9 +86,9 @@ def test_field_extraction_and_flagging():
     # Test NACH mandate with ambiguous IFSC
     lines_nach = ["31004258912", "JFscSB1N0221", "State Bank of India", "50,000", "Monthly"]
     confs_nach = [0.95, 0.65, 0.95, 0.90, 0.90]
-    fields = extract_fields_for_type(DocumentType.NACH_MANDATE, lines_nach, confs_nach)
-    
+    fields, trajectory = extract_fields_for_type(DocumentType.NACH_MANDATE, lines_nach, confs_nach)
     assert len(fields) == 5
+    assert len(trajectory) >= 1
     # The IFSC should be flagged for review due to confidence < 0.85
     ifsc_field = next(f for f in fields if f.field_name == "IFSC Code")
     assert ifsc_field.is_handwritten is True

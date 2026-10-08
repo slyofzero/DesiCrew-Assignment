@@ -15,11 +15,14 @@ import {
   Edit3,
   Check,
   ChevronDown,
+  ChevronUp,
   Info,
   ShieldCheck,
   ArrowLeft,
   FileCheck,
   AlertTriangle,
+  Copy,
+  BrainCircuit,
 } from "lucide-react";
 
 interface FieldResult {
@@ -44,6 +47,7 @@ interface DocumentProcessResponse {
   flagged_count: number;
   processing_time_sec: number;
   raw_ocr_lines?: string[];
+  thought_trajectory?: string[];
 }
 
 interface SampleDoc {
@@ -54,6 +58,7 @@ interface SampleDoc {
 }
 
 const DOCUMENT_TYPES = [
+  "Not Classified",
   "Aadhaar Card",
   "PAN Card",
   "Driving Licence",
@@ -79,8 +84,19 @@ export default function IDPPipelinePage() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [editingField, setEditingField] = useState<string | null>(null);
   const [editValue, setEditValue] = useState<string>("");
+  const [showTrajectory, setShowTrajectory] = useState<boolean>(true);
+  const [activeTab, setActiveTab] = useState<"fields" | "trajectory">("fields");
+  const [copiedTrajectory, setCopiedTrajectory] = useState<boolean>(false);
   const [showReportModal, setShowReportModal] = useState(false);
   const [reportData, setReportData] = useState<any>(null);
+
+  const handleCopyTrajectory = () => {
+    if (!docResult?.thought_trajectory) return;
+    const text = docResult.thought_trajectory.join("\n\n");
+    navigator.clipboard.writeText(text);
+    setCopiedTrajectory(true);
+    setTimeout(() => setCopiedTrajectory(false), 2000);
+  };
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -122,7 +138,8 @@ export default function IDPPipelinePage() {
       if (!res.ok) throw new Error("Upload processing failed");
       const data: DocumentProcessResponse = await res.json();
       setDocResult(data);
-      setSelectedType(data.document_type);
+      const mappedType = data.document_type === "Unknown Document" ? "Not Classified" : (data.document_type || "Not Classified");
+      setSelectedType(mappedType);
       setPreviewUrl(`${API_BASE}/preview/${data.document_id}`);
     } catch (err) {
       console.error(err);
@@ -152,7 +169,8 @@ export default function IDPPipelinePage() {
       if (!res.ok) throw new Error("Sample processing failed");
       const data: DocumentProcessResponse = await res.json();
       setDocResult(data);
-      setSelectedType(data.document_type);
+      const mappedType = data.document_type === "Unknown Document" ? "Not Classified" : (data.document_type || "Not Classified");
+      setSelectedType(mappedType);
       setPreviewUrl(`${API_BASE}/preview/${data.document_id}`);
     } catch (err) {
       console.error(err);
@@ -475,11 +493,18 @@ export default function IDPPipelinePage() {
 
                     {/* Classification Status Badge */}
                     <div className="flex md:flex-col items-center md:items-end justify-between gap-1 pt-1">
-                      <span className="text-xs text-slate-400">Model Confidence</span>
-                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-950/80 text-emerald-300 border border-emerald-800">
-                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                        {Math.round(docResult.classification_confidence * 100)}% Match
-                      </span>
+                      <span className="text-xs text-slate-400">Classification Status</span>
+                      {selectedType === "Not Classified" ? (
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-950/80 text-amber-300 border border-amber-800">
+                          <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+                          Not Classified
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-950/80 text-emerald-300 border border-emerald-800">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                          {Math.round(docResult.classification_confidence * 100)}% Match
+                        </span>
+                      )}
                     </div>
                   </div>
 
@@ -519,9 +544,76 @@ export default function IDPPipelinePage() {
                     </div>
                   </div>
 
+                  {/* Segmented Navigation: Extracted Fields vs Full CoT Trajectory */}
+                  <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                    <div className="flex items-center gap-1.5 p-1 bg-slate-950 rounded-xl border border-slate-800">
+                      <button
+                        onClick={() => setActiveTab("fields")}
+                        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                          activeTab === "fields"
+                            ? "bg-slate-800 text-white shadow-sm"
+                            : "text-slate-400 hover:text-slate-200"
+                        }`}
+                      >
+                        <FileText className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>Extracted Fields</span>
+                        <span className="px-1.5 py-0.5 rounded bg-slate-700/60 text-[10px] text-slate-300">
+                          {docResult.fields.length}
+                        </span>
+                      </button>
+
+                      <button
+                        onClick={() => setActiveTab("trajectory")}
+                        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                          activeTab === "trajectory"
+                            ? "bg-purple-950/90 text-purple-200 border border-purple-700/80 shadow-sm"
+                            : "text-slate-400 hover:text-purple-300"
+                        }`}
+                      >
+                        <BrainCircuit className="w-3.5 h-3.5 text-purple-400" />
+                        <span>Full CoT Trajectory</span>
+                        <span className="px-1.5 py-0.5 rounded bg-purple-900/80 text-[10px] text-purple-200 border border-purple-700/60">
+                          {docResult.thought_trajectory?.length || 0} Steps
+                        </span>
+                      </button>
+                    </div>
+
+                    <button
+                      onClick={handleCopyTrajectory}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-950 hover:bg-slate-800 text-slate-300 text-xs rounded-lg border border-slate-800 transition"
+                      title="Copy Entire Chain of Thought Trajectory to Clipboard"
+                    >
+                      {copiedTrajectory ? (
+                        <>
+                          <Check className="w-3.5 h-3.5 text-emerald-400" />
+                          <span className="text-emerald-400 font-medium text-xs">Copied!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3.5 h-3.5 text-slate-400" />
+                          <span className="text-xs">Copy CoT</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+
                   {/* Extracted Fields Table */}
-                  <div className="overflow-x-auto rounded-xl border border-slate-800">
-                    <table className="w-full text-left text-xs">
+                  {activeTab === "fields" && (
+                    <div className="flex flex-col gap-5">
+                      {docResult.fields.length === 0 ? (
+                        <div className="p-8 text-center bg-slate-950/60 rounded-xl border border-slate-800">
+                          <AlertTriangle className="w-8 h-8 text-amber-400 mx-auto mb-2" />
+                          <h4 className="text-sm font-semibold text-slate-200 mb-1">
+                            Document Not Classified
+                          </h4>
+                          <p className="text-xs text-slate-400 max-w-md mx-auto">
+                            This document did not match any of the standard onboarding templates.
+                            Select a document type from the dropdown above to trigger targeted field extraction.
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="overflow-x-auto rounded-xl border border-slate-800">
+                          <table className="w-full text-left text-xs">
                       <thead className="bg-slate-950 text-slate-400 font-semibold uppercase tracking-wider border-b border-slate-800">
                         <tr>
                           <th className="py-3 px-3.5">Target Field</th>
@@ -671,6 +763,178 @@ export default function IDPPipelinePage() {
                       </tbody>
                     </table>
                   </div>
+                )}
+
+                      {/* LangGraph Chain-of-Thought Trajectory Accordion */}
+                      {docResult.thought_trajectory && docResult.thought_trajectory.length > 0 && (
+                        <div className="rounded-xl border border-slate-800 bg-slate-950/60 overflow-hidden shadow-sm">
+                          <button
+                            type="button"
+                            onClick={() => setShowTrajectory(!showTrajectory)}
+                            className="w-full flex items-center justify-between p-3.5 text-left bg-slate-900/60 hover:bg-slate-900 transition border-b border-slate-800/80"
+                          >
+                            <div className="flex items-center gap-2">
+                              <Sparkles className="w-4 h-4 text-purple-400" />
+                              <span className="text-xs font-semibold text-slate-200">
+                                LangGraph Chain of Thought Reasoning Trajectory
+                              </span>
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-purple-950/80 text-purple-300 border border-purple-800/60">
+                                {docResult.thought_trajectory.length} Thoughts
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <span
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActiveTab("trajectory");
+                                }}
+                                className="text-[11px] text-purple-400 hover:text-purple-300 underline font-sans"
+                              >
+                                Full Screen View
+                              </span>
+                              <div className="flex items-center gap-1 text-xs text-slate-400">
+                                <span>{showTrajectory ? "Collapse" : "Expand"}</span>
+                                {showTrajectory ? (
+                                  <ChevronUp className="w-4 h-4" />
+                                ) : (
+                                  <ChevronDown className="w-4 h-4" />
+                                )}
+                              </div>
+                            </div>
+                          </button>
+
+                          {showTrajectory && (
+                            <div className="p-4 space-y-3 font-mono text-xs">
+                              {docResult.thought_trajectory.map((thought, idx) => (
+                                <div
+                                  key={idx}
+                                  className="p-3 rounded-lg bg-slate-900/80 border border-slate-800/80 flex items-start gap-3"
+                                >
+                                  <span className="flex-shrink-0 px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30 text-[10px] font-bold">
+                                    Step {idx + 1}
+                                  </span>
+                                  <div className="flex-1 text-slate-300 whitespace-pre-wrap leading-relaxed text-[11px]">
+                                    {thought}
+                                  </div>
+                                </div>
+                              ))}
+                              <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1 font-sans">
+                                <span>Max trajectory: 5 steps • Early stopping when confident</span>
+                                <span className="text-emerald-400 font-medium">Deterministic regex validation active</span>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* VIEW 2: Dedicated Full CoT Trajectory View */}
+                  {activeTab === "trajectory" && (
+                    <div className="space-y-4">
+                      {/* Trajectory Header Banner */}
+                      <div className="p-4 rounded-xl bg-purple-950/30 border border-purple-800/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <BrainCircuit className="w-4 h-4 text-purple-400" />
+                            <h4 className="text-sm font-bold text-purple-200">
+                              Full Chain of Thought (CoT) Reasoning Trajectory
+                            </h4>
+                          </div>
+                          <p className="text-xs text-purple-300/80 mt-1">
+                            Step-by-step reflection history: OCR layout ingestion, spatial header separation, typo normalization, and deterministic format validation.
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => setShowTrajectory(!showTrajectory)}
+                            className="px-3 py-1.5 text-xs rounded-lg bg-purple-900/60 hover:bg-purple-900 text-purple-200 border border-purple-700/60 transition"
+                          >
+                            {showTrajectory ? "Collapse All" : "Expand All"}
+                          </button>
+                          <button
+                            onClick={() => setActiveTab("fields")}
+                            className="px-3 py-1.5 text-xs rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition"
+                          >
+                            Back to Fields
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Step by Step Trajectory Cards */}
+                      {showTrajectory ? (
+                        <div className="space-y-3 font-mono text-xs">
+                          {docResult.thought_trajectory?.map((thought, idx) => {
+                            const isCritique = thought.toLowerCase().includes("critique") || thought.toLowerCase().includes("violation");
+                            const isTriage = thought.toLowerCase().includes("triage");
+                            const isFormat = thought.toLowerCase().includes("format") || thought.toLowerCase().includes("syntax");
+
+                            return (
+                              <div
+                                key={idx}
+                                className={`rounded-xl border overflow-hidden shadow-sm transition ${
+                                  isCritique
+                                    ? "border-amber-800/80 bg-amber-950/20"
+                                    : isTriage
+                                    ? "border-emerald-800/80 bg-emerald-950/20"
+                                    : "border-slate-800 bg-slate-950/70"
+                                }`}
+                              >
+                                <div className="p-3 bg-slate-900/80 border-b border-slate-800/80 flex items-center justify-between">
+                                  <div className="flex items-center gap-2.5">
+                                    <span
+                                      className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                        isCritique
+                                          ? "bg-amber-500/20 text-amber-300 border border-amber-500/40"
+                                          : isTriage
+                                          ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
+                                          : "bg-purple-500/20 text-purple-300 border border-purple-500/30"
+                                      }`}
+                                    >
+                                      Step {idx + 1}
+                                    </span>
+                                    <span className="font-sans text-xs font-semibold text-slate-200">
+                                      {thought.includes("[") && thought.includes("]")
+                                        ? thought.substring(thought.indexOf("[") + 1, thought.indexOf("]"))
+                                        : isFormat
+                                        ? "Deterministic Format Validation"
+                                        : isTriage
+                                        ? "Underwriting Triage Gate"
+                                        : `Semantic Reasoning Iteration ${idx + 1}`}
+                                    </span>
+                                  </div>
+                                  <span className="text-[10px] text-slate-500 font-sans">
+                                    Step {idx + 1} of {docResult.thought_trajectory?.length}
+                                  </span>
+                                </div>
+                                <div className="p-4 text-slate-200 whitespace-pre-wrap leading-relaxed text-[11.5px] bg-slate-950/40">
+                                  {thought.includes("]: ") ? thought.split("]: ")[1] : thought}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="p-8 text-center bg-slate-950/40 rounded-xl border border-slate-800">
+                          <p className="text-xs text-slate-400 mb-2">Trajectory steps are currently collapsed.</p>
+                          <button
+                            onClick={() => setShowTrajectory(true)}
+                            className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-xs font-semibold transition"
+                          >
+                            Expand {docResult.thought_trajectory?.length || 0} Reasoning Steps
+                          </button>
+                        </div>
+                      )}
+
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between text-xs text-slate-400 p-3 rounded-lg bg-slate-950 border border-slate-800 font-sans gap-2">
+                        <div className="flex items-center gap-2">
+                          <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                          <span>Max trajectory cap: 5 thoughts • Early stopping active</span>
+                        </div>
+                        <span className="text-purple-400 font-medium">Deterministic regex guardrails active</span>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Bottom Action Footer */}
                   <div className="flex items-center justify-between pt-2">

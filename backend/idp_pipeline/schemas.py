@@ -14,11 +14,12 @@ class DocumentType(str, Enum):
     MORAL_HAZARD = "Moral Hazard Questionnaire"
     MULTIPLE_POLICIES = "Multiple Policies Consent Form"
     SUITABILITY_PROFILER = "Suitability Profiler Declaration"
-    UNKNOWN = "Unknown Document"
+    UNKNOWN = "Not Classified"
 
 
 # Exact required fields mapping as per Question 3 specifications
 DOCUMENT_TARGET_FIELDS: Dict[DocumentType, List[str]] = {
+    DocumentType.UNKNOWN: [],
     DocumentType.AADHAAR: [
         "Aadhaar Number",
         "Full Name",
@@ -108,6 +109,7 @@ class DocumentProcessResponse(BaseModel):
     flagged_count: int
     processing_time_sec: float
     raw_ocr_lines: Optional[List[str]] = None
+    thought_trajectory: Optional[List[str]] = None
 
 
 class TriageUpdateRequest(BaseModel):
