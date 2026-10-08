@@ -2,11 +2,56 @@
 
 A unified enterprise-grade AI system integrating **stateful multi-turn agents**, **vector-retrieval document synthesis**, and **intelligent document processing (IDP)** with human-in-the-loop review triage.
 
-Built with **FastAPI**, **LangChain / LangGraph**, **Python 3.12**, and **Next.js 16 (React 19 + Tailwind CSS)**.
+Built with **FastAPI**, **LangGraph / LangChain**, **Python 3.12**, and **Next.js 16 (React 19 + Tailwind CSS)**.
 
 ---
 
-## Architecture Overview
+## 📑 Table of Contents
+
+- [🎥 Visual Demonstrations](#-visual-demonstrations)
+  - [1. Excel Data Intelligence Agent (`/excel-agent`)](#1-excel-data-intelligence-agent-excel-agent)
+  - [2. Notes Summarization & Support Assistant (`/support-assistant`)](#2-notes-summarization--support-assistant-support-assistant)
+  - [3. Intelligent Document Processing (IDP) Pipeline (`/idp-pipeline`)](#3-intelligent-document-processing-idp-pipeline-idp-pipeline)
+- [🏗️ Architecture Overview](#-architecture-overview)
+- [📦 Core Modules & Capabilities](#-core-modules--capabilities)
+- [🌐 External Services & Dependencies](#-external-services--dependencies)
+- [⚙️ Environment Configuration (`.env`)](#-environment-configuration-env)
+- [📋 Prerequisites](#-prerequisites)
+- [🚀 Step-by-Step Installation & Running Guide](#-step-by-step-installation--running-guide)
+  - [1. Clone Repository](#1-clone-the-repository)
+  - [2. Configure Environment Variables](#2-configure-environment-variables)
+  - [3. Start Backend (FastAPI)](#3-start-the-backend-fastapi)
+  - [4. Start Frontend (Next.js)](#4-start-the-frontend-nextjs)
+- [🧪 Running Automated Tests](#-running-automated-tests)
+- [📂 Directory Structure](#-directory-structure)
+- [❓ Troubleshooting & FAQ](#-troubleshooting--faq)
+
+---
+
+## 🎥 Visual Demonstrations
+
+### 1. Excel Data Intelligence Agent (`/excel-agent`)
+Autonomous multi-turn agent powered by a LangGraph **Reasoner $\rightarrow$ Act $\rightarrow$ Critic** loop. Features sandboxed Python execution on pandas DataFrames, runtime exception interception with self-reflection & self-repair, web definition lookup, sheet creation, and calculated column injection.
+
+![Question 1: Excel Data Intelligence Agent](assets/Question%201.gif)
+
+---
+
+### 2. Notes Summarization & Support Assistant (`/support-assistant`)
+Document-aware conversational assistant with local vector retrieval via FastEmbed (`bge-small-en-v1.5`), sliding-window multi-turn memory, anti-repetition guardrails, recursive document tree traversal, and exact section citations across `.md`, `.txt`, `.pdf`, and `.ipynb` files.
+
+![Question 2: Notes Summarization & Support Assistant](assets/Question%202.gif)
+
+---
+
+### 3. Intelligent Document Processing (IDP) Pipeline (`/idp-pipeline`)
+End-to-end multi-modal IDP pipeline combining RapidOCR (PP-OCRv4 ONNX), discriminative document classification (Aadhaar, PAN, DL, Passport, Cheque, Bank Statement, Salary Slip, Assignment Forms, Proposal Forms, etc.), multi-tier algorithmic & regex confidence scoring, and interactive Human-in-the-Loop (HITL) review triage with bounding-box image inspection and audit trail persistence.
+
+![Question 3: Intelligent Document Processing Pipeline](assets/Question%203.gif)
+
+---
+
+## 🏗️ Architecture Overview
 
 ```
                                  ┌────────────────────────────────────────────────┐
@@ -33,7 +78,7 @@ Built with **FastAPI**, **LangChain / LangGraph**, **Python 3.12**, and **Next.j
 
 ---
 
-## Applications & Modules
+## 📦 Core Modules & Capabilities
 
 ### 1. Excel Data Intelligence Agent (`/excel-agent`)
 * **LangGraph Stateful Loop**: Uses a dynamic `Reasoner -> Act -> Critic` agent loop with runtime self-reflection.
@@ -49,13 +94,13 @@ Built with **FastAPI**, **LangChain / LangGraph**, **Python 3.12**, and **Next.j
 
 ### 3. Intelligent Document Processing (IDP) Pipeline (`/idp-pipeline`)
 * **OCR & Multi-Modal Parsing**: High-accuracy local text extraction on images and PDFs powered by `rapidocr-onnxruntime` (PP-OCRv4 ONNX model).
-* **Document Classification**: Hybrid rule-based keyword matching and zero-shot LLM classification for Indian identity & financial documents (Aadhaar, PAN Card, Driving License, Passport, Bank Statement, Invoice/Bill, Salary Slip, Cheque).
-* **Confidence & Format Validation**: Per-field confidence combining OCR character probabilities, regex pattern validation, and algorithmic checksums (e.g. Verhoeff algorithm for Aadhaar).
+* **Document Classification**: Hybrid rule-based keyword matching and zero-shot LLM classification for Indian identity, financial, and insurance documents (Aadhaar, PAN Card, Driving License, Passport, Bank Statement, Invoice/Bill, Salary Slip, Cheque, Assignment Request Form, Application/Proposal Form, Benefit Illustration, Multiple Policies Consent Form).
+* **Confidence & Format Validation**: Per-field confidence combining OCR character probabilities, regex pattern validation, and algorithmic checksums (e.g. Verhoeff algorithm for Aadhaar, checksum verification for IFSC/PAN).
 * **Human-in-the-Loop (HITL) Triage**: Flagging low-confidence fields (< 0.85), side-by-side document image preview with bounding box zoom, in-place correction, accept/reject decisions, and audit trail export (`idp_triage_audit.json`).
 
 ---
 
-## External Services & Dependencies
+## 🌐 External Services & Dependencies
 
 | Service / Dependency | Purpose | Authentication / Configuration | Notes |
 | :--- | :--- | :--- | :--- |
@@ -67,7 +112,7 @@ Built with **FastAPI**, **LangChain / LangGraph**, **Python 3.12**, and **Next.j
 
 ---
 
-## Environment Variables (`.env`)
+## ⚙️ Environment Configuration (`.env`)
 
 The backend requires a `.env` file located inside the `backend/` directory. An example file is provided at `backend/.env.example`.
 
@@ -97,7 +142,7 @@ SUPPORT_MODEL="openai/gpt-4o-mini"
 
 ---
 
-## Prerequisites
+## 📋 Prerequisites
 
 Before running the application, make sure you have the following installed:
 
@@ -107,7 +152,7 @@ Before running the application, make sure you have the following installed:
 
 ---
 
-## Step-by-Step Installation & Running Guide
+## 🚀 Step-by-Step Installation & Running Guide
 
 ### 1. Clone the Repository
 
@@ -186,7 +231,7 @@ pnpm dev
 The Next.js application will start at:
 * **Frontend Application**: [http://localhost:3000](http://localhost:3000)
 
-### Frontend Routes:
+#### Available Frontend Routes:
 * **Home Portal**: [http://localhost:3000/](http://localhost:3000/)
 * **Excel Data Intelligence Agent**: [http://localhost:3000/excel-agent](http://localhost:3000/excel-agent)
 * **Notes Summarization Assistant**: [http://localhost:3000/support-assistant](http://localhost:3000/support-assistant)
@@ -194,7 +239,7 @@ The Next.js application will start at:
 
 ---
 
-## Running Automated Tests
+## 🧪 Running Automated Tests
 
 Run the test suite using `uv run pytest` from the `backend/` directory:
 
@@ -206,11 +251,15 @@ uv run pytest tests/test_support_assistant.py
 
 ---
 
-## Directory Structure
+## 📂 Directory Structure
 
 ```
 DesiCrew/
 ├── README.md                      # Unified project documentation
+├── assets/                        # Demonstration GIFs and visual assets
+│   ├── Question 1.gif             # Excel Data Intelligence Agent demo
+│   ├── Question 2.gif             # Notes Summarization Assistant demo
+│   └── Question 3.gif             # IDP Pipeline & Review Triage demo
 ├── backend/
 │   ├── .env                       # Environment variables (private)
 │   ├── .env.example               # Environment template
@@ -251,7 +300,7 @@ DesiCrew/
 
 ---
 
-## Troubleshooting & FAQ
+## ❓ Troubleshooting & FAQ
 
 1. **`AI_TOKEN is not set` Error**:
    * Verify that `backend/.env` exists and contains a valid token for `AI_TOKEN`.
