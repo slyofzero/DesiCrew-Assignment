@@ -6,8 +6,8 @@ from typing import Dict, List, Optional
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
-from idp_pipeline.extractor import extract_text_from_file, process_document
-from idp_pipeline.schemas import (
+from agentic_idp_pipeline.extractor import extract_text_from_file, process_document
+from agentic_idp_pipeline.schemas import (
     DOCUMENT_TARGET_FIELDS,
     DocumentProcessResponse,
     DocumentType,

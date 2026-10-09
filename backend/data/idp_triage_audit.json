@@ -46,5 +46,11 @@
     "field_name": "Place",
     "new_value": "West Bihar",
     "verified": true
+  },
+  {
+    "document_id": "ChatGPT Image May 2, 2026, 03_52_54 PM",
+    "field_name": "MRZ Line 2",
+    "new_value": "\u00d7 1 234 567<7IND 79 1218 5M300 1 010<<<<<<<<<<<<<<<<<<<<08",
+    "verified": true
   }
 ]

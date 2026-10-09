@@ -2,8 +2,14 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from excel_agent.server import router as excel_agent_router
-from idp_pipeline.router import router as idp_router
+from idp_pipeline.router import router as heuristic_idp_router
 from support_assistant.server import router as support_assistant_router
+from agentic_idp_pipeline.router import router as agentic_idp_router
+
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Initialize central FastAPI application
 app = FastAPI(
@@ -21,10 +27,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+idp_router = agentic_idp_router if os.getenv("IDP_ROUTER_TYPE") == "agentic" else heuristic_idp_router
+
 # Mount modular routers
 app.include_router(excel_agent_router, prefix="/api")
-app.include_router(idp_router, prefix="/api")
 app.include_router(support_assistant_router, prefix="/api")
+app.include_router(idp_router, prefix="/api")
 
 @app.get("/")
 def root():

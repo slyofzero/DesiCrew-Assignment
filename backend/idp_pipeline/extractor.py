@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import tempfile
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -27,6 +28,9 @@ from idp_pipeline.validators import (
     validate_passport_number,
 )
 
+TEMP_PREVIEW_DIR = os.path.join(tempfile.gettempdir(), "idp_previews")
+os.makedirs(TEMP_PREVIEW_DIR, exist_ok=True)
+
 # Global singleton OCR engine to avoid reloading ONNX models on each request
 _ocr_engine = None
 
@@ -38,32 +42,33 @@ def get_ocr_engine() -> RapidOCR:
     return _ocr_engine
 
 
-def extract_text_from_file(file_path: str) -> Tuple[List[str], List[float], str]:
+def extract_text_from_file(file_path: str) -> Tuple[List[Tuple[str, float]], str]:
     """
     Runs RapidOCR on an image or PDF.
-    Returns: (ocr_lines, confidences, image_path_for_preview)
+    Returns: (ocr_results, image_path_for_preview)
+    where ocr_results is a singular array of 2D tuples: [(line, confidence), ...]
     """
     engine = get_ocr_engine()
 
-    # If PDF, render first page to PNG
+    # If PDF, render first page to PNG in a temp directory (never polluting Question 3 or source dirs)
     if file_path.lower().endswith(".pdf"):
         doc = fitz.open(file_path)
         page = doc[0]
         pix = page.get_pixmap(dpi=150)
-        img_preview_path = file_path.rsplit(".", 1)[0] + "_preview.png"
+        base_name = os.path.basename(file_path).rsplit(".", 1)[0]
+        img_preview_path = os.path.join(TEMP_PREVIEW_DIR, f"{base_name}_preview.png")
         pix.save(img_preview_path)
         target_path = img_preview_path
     else:
         target_path = file_path
 
+
     result, _ = engine(target_path)
     if not result:
-        return [], [], target_path
+        return [], target_path
 
-    lines = [item[1] for item in result]
-    confs = [float(item[2]) for item in result]
-
-    return lines, confs, target_path
+    ocr_items = [(str(item[1]), float(item[2])) for item in result]
+    return ocr_items, target_path
 
 
 def find_pattern_in_lines(lines: List[str], confs: List[float], pattern: str) -> Tuple[Optional[str], float]:
@@ -1271,7 +1276,9 @@ def process_document(
     Step 5: Underwriting Triage Gate (tau = 0.85 auto-approve vs human review queue).
     """
     start_time = time.time()
-    ocr_lines, confs, preview_img = extract_text_from_file(file_path)
+    ocr_items, preview_img = extract_text_from_file(file_path)
+    ocr_lines = [item[0] for item in ocr_items]
+    confs = [item[1] for item in ocr_items]
 
     # Step 1: LLM Document Classification
     if override_type is not None:
